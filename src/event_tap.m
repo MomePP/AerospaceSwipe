@@ -16,6 +16,10 @@ struct event_tap g_event_tap = { 0 };
 static CFMutableDictionaryRef g_touch_slots = NULL;
 static bool g_slot_in_use[MAX_TOUCHES] = { false };
 
+// identity -> malloc'd touch_state, the previous sample a finger's velocity
+// is differenced against. Retired alongside the slot in touch_end().
+static CFMutableDictionaryRef touchStates = NULL;
+
 int touch_slot_acquire(const void* identity)
 {
 	if (!g_touch_slots) {
