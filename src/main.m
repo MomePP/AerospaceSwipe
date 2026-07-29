@@ -297,6 +297,7 @@ static void reset_gesture_state(gesture_ctx* ctx)
 	ctx->acc_dx = 0;
 	ctx->peak_velx = 0;
 	ctx->executed_step = 0;
+	memset(ctx->prev_valid, 0, sizeof(ctx->prev_valid));
 
 	// cached_workspace_list is also read/written under g_aerospace_mutex by
 	// switch_workspace() from the workspace-dispatch queue; take the same
@@ -411,10 +412,15 @@ static void handle_idle_state(gesture_ctx* ctx, touch* touches, int count, float
 	ctx->start_x = avg_x;
 	ctx->start_y = avg_y;
 
+	// Gesture start is the reference point: only the fingers actually down
+	// right now have a position worth differencing against.
+	memset(ctx->prev_valid, 0, sizeof(ctx->prev_valid));
+
 	for (int i = 0; i < count; ++i) {
 		if (touches[i].slot < 0)
 			continue;
 		ctx->prev_x[touches[i].slot] = touches[i].x;
+		ctx->prev_valid[touches[i].slot] = true;
 	}
 }
 
@@ -423,13 +429,37 @@ static void handle_tracking_state(gesture_ctx* ctx, touch* touches, int count,
 {
 	float frame_dx = 0;
 	int moved = 0;
+	bool present[MAX_TOUCHES] = { false };
+
 	for (int i = 0; i < count; ++i) {
-		if (touches[i].slot < 0)
+		int slot = touches[i].slot;
+		if (slot < 0)
 			continue;
-		frame_dx += touches[i].x - ctx->prev_x[touches[i].slot];
-		ctx->prev_x[touches[i].slot] = touches[i].x;
-		moved++;
+
+		present[slot] = true;
+
+		// A finger that lands mid-gesture has no previous position of its
+		// own — and since slots are recycled on release, prev_x[slot] may
+		// still hold the last position of whichever finger held the slot
+		// before. Seed it and let this finger contribute from the next
+		// frame, rather than folding a meaningless jump into acc_dx.
+		if (ctx->prev_valid[slot]) {
+			frame_dx += touches[i].x - ctx->prev_x[slot];
+			moved++;
+		}
+
+		ctx->prev_x[slot] = touches[i].x;
+		ctx->prev_valid[slot] = true;
 	}
+
+	// Every frame carries the full set of live contacts, so a slot missing
+	// from this one belongs to a finger that has lifted. Drop its position
+	// now so it can't seed a later finger that inherits the slot.
+	for (int slot = 0; slot < MAX_TOUCHES; ++slot) {
+		if (!present[slot])
+			ctx->prev_valid[slot] = false;
+	}
+
 	if (moved > 0)
 		ctx->acc_dx += frame_dx / moved;
 
