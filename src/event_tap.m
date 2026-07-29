@@ -56,6 +56,19 @@ void touch_slot_release(const void* identity)
 	CFDictionaryRemoveValue(g_touch_slots, identity);
 }
 
+void touch_end(const void* identity)
+{
+	if (touchStates) {
+		touch_state* state = (touch_state*)CFDictionaryGetValue(touchStates, identity);
+		if (state) {
+			CFDictionaryRemoveValue(touchStates, identity);
+			free(state);
+		}
+	}
+
+	touch_slot_release(identity);
+}
+
 @implementation TouchConverter
 
 + (touch)convert_nstouch:(id)nsTouch
@@ -99,12 +112,8 @@ void touch_slot_release(const void* identity)
 	}
 	nt.velocity = velocity_x;
 
-	if (nt.phase == 8) {
-		CFDictionaryRemoveValue(touchStates, (__bridge const void*)(touchIdentity));
-		if (state)
-			free(state);
-		touch_slot_release((__bridge const void*)(touchIdentity));
-	}
+	// No terminal-phase cleanup here: process_touches() retires ended and
+	// cancelled contacts via touch_end() and never converts them.
 
 	return nt;
 }

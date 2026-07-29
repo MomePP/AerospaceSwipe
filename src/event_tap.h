@@ -10,6 +10,7 @@
 
 #define ACTIVATE_PCT 0.05f
 #define END_PHASE 8 // NSTouchPhaseEnded
+#define CANCEL_PHASE 16 // NSTouchPhaseCancelled
 #define MAX_TOUCHES 16
 
 extern const char* get_name_for_pid(uint64_t pid);
@@ -22,6 +23,13 @@ extern char* string_copy(char* s);
 // twice returns the same slot until it's released.
 int touch_slot_acquire(const void* identity);
 void touch_slot_release(const void* identity);
+
+// Retires a finger whose contact has ended or been cancelled: frees its slot
+// and its cached velocity state. Must be called for every touch that reaches
+// END_PHASE or CANCEL_PHASE — those touches never reach convert_nstouch, and
+// a slot that is not returned here is lost for the lifetime of the process.
+// Safe to call for an identity that was never acquired.
+void touch_end(const void* identity);
 
 struct event_tap {
 	CFMachPortRef handle;
