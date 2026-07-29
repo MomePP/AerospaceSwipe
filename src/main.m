@@ -20,7 +20,6 @@ static ConfigStore g_config_store;
 
 static pthread_mutex_t g_gesture_mutex = PTHREAD_MUTEX_INITIALIZER;
 static gesture_ctx g_gesture_ctx = { 0 };
-static CFMutableDictionaryRef g_tracks = NULL;
 
 // Frames are dispatched here in delivery order, one at a time — required
 // since gesture processing sums displacement across frames and a
@@ -680,10 +679,6 @@ int main(int argc, const char* argv[])
 			if (!g_haptic)
 				fprintf(stderr, "Warning: Failed to initialize haptic actuator. Continuing without haptics.\n");
 		}
-
-		g_tracks = CFDictionaryCreateMutable(NULL, 0,
-			&kCFTypeDictionaryKeyCallBacks,
-			NULL);
 
 		g_gesture_queue = dispatch_queue_create("aerospace-swipe.gesture", DISPATCH_QUEUE_SERIAL);
 		g_workspace_queue = dispatch_queue_create("aerospace-swipe.workspace", DISPATCH_QUEUE_SERIAL);

@@ -13,9 +13,6 @@
 #define CANCEL_PHASE 16 // NSTouchPhaseCancelled
 #define MAX_TOUCHES 16
 
-extern const char* get_name_for_pid(uint64_t pid);
-extern char* string_copy(char* s);
-
 // Maps an NSTouch.identity to a stable per-finger slot in [0, MAX_TOUCHES).
 // Unlike NSSet enumeration order (which is not guaranteed stable across
 // separate gesture callbacks), the returned slot is stable for the whole
@@ -43,7 +40,6 @@ typedef struct {
 	int phase;
 	double timestamp;
 	double velocity;
-	bool is_palm;
 	int slot; // stable per-finger index from touch_slot_acquire(), or -1
 } touch;
 
@@ -73,20 +69,11 @@ typedef struct {
 	char* cached_workspace_list; // aerospace_list_workspaces() result, reused for this gesture
 } gesture_ctx;
 
-// Palm rejection tracking structure
-typedef struct {
-	CGPoint start, last;
-	CFTimeInterval t_start, t_last;
-	CGFloat travel;
-	bool is_palm, seen;
-} finger_track;
-
 @interface TouchConverter : NSObject
 + (touch)convert_nstouch:(id)nsTouch;
 @end
 
 extern struct event_tap g_event_tap;
-static CFMutableDictionaryRef touchStates;
 
 bool event_tap_enabled(struct event_tap* event_tap);
 bool event_tap_begin(struct event_tap* event_tap, CGEventRef (*reference)(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void* userdata));
