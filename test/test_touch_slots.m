@@ -2,13 +2,49 @@
 // Builds independently of the full app (no CGEventTap, no NSApplication) so
 // it runs without Accessibility permission or a live trackpad. Run via
 // `make test`.
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <assert.h>
 #import "../src/event_tap.h"
 
+// Regression: slots must be reclaimed when a contact ends, or a second
+// trackpad exhausts the pool. Each multitouch device carries its own set of
+// NSTouch identity objects, and a Bluetooth trackpad hands out a fresh set
+// every time it re-enumerates (plug-in, sleep/wake). Identities are never
+// equal across those generations, so without a reclaim on contact end the 16
+// slots are consumed for good — touch_slot_acquire() then returns -1 for
+// every finger, gesture displacement stops accumulating, and no swipe fires
+// again until the process is restarted.
+static void test_slots_survive_repeated_device_generations(void)
+{
+	for (int generation = 0; generation < 8; ++generation) {
+		NSMutableArray* pool = [NSMutableArray array];
+
+		for (int finger = 0; finger < 5; ++finger) {
+			NSObject* identity = [NSObject new];
+			[pool addObject:identity];
+
+			int slot = touch_slot_acquire((__bridge const void*)identity);
+			assert(slot >= 0 && slot < MAX_TOUCHES);
+		}
+
+		// Every contact lifts — the whole generation goes away with it.
+		for (NSObject* identity in pool)
+			touch_end((__bridge const void*)identity);
+	}
+}
+
 int main(void)
 {
 	@autoreleasepool {
+		// Runs first: the assertions below deliberately exhaust the pool.
+		test_slots_survive_repeated_device_generations();
+
+		// The two NSTouch phases that mean "this contact is over". Guarding
+		// the literals here keeps the process_touches() reclaim path honest.
+		assert(END_PHASE == NSTouchPhaseEnded);
+		assert(CANCEL_PHASE == NSTouchPhaseCancelled);
+
 		NSObject* fingerA = [NSObject new];
 		NSObject* fingerB = [NSObject new];
 		NSObject* fingerC = [NSObject new];

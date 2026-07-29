@@ -506,13 +506,22 @@ static void process_touches(NSSet<NSTouch*>* touches)
 	NSUInteger i = 0;
 
 	for (NSTouch* touch in touches) {
-		if (touch.phase != END_PHASE) {
-			if (i >= buf_capacity) {
-				buf_capacity *= 2;
-				buf = realloc(buf, sizeof(touch) * buf_capacity);
-			}
-			buf[i++] = [TouchConverter convert_nstouch:touch];
+		// A lifted or cancelled finger is done: hand its slot back before
+		// dropping it from the frame. Skipping it without retiring it leaks
+		// the slot, and the 16-slot pool is shared across every trackpad —
+		// so a second device (or a Bluetooth trackpad re-enumerating on
+		// wake) brings a fresh set of identities that eventually exhausts
+		// it, after which every finger reports slot -1 and no swipe fires.
+		if (touch.phase == END_PHASE || touch.phase == CANCEL_PHASE) {
+			touch_end((__bridge const void*)(touch.identity));
+			continue;
 		}
+
+		if (i >= buf_capacity) {
+			buf_capacity *= 2;
+			buf = realloc(buf, sizeof(touch) * buf_capacity);
+		}
+		buf[i++] = [TouchConverter convert_nstouch:touch];
 	}
 
 	dispatch_async(g_gesture_queue, ^{
