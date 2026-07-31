@@ -438,46 +438,46 @@ char* aerospace_workspace(aerospace* client, int wrap_around, const char* ws_com
 	return execute_aerospace_command(client, args, arg_count, stdin_payload, NULL);
 }
 
-int parse_monitor_id(const char* out)
+static bool is_space(char c)
+{
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+char* parse_workspace_name(const char* out)
 {
 	if (!out)
-		return -1;
+		return NULL;
 
-	while (*out == ' ' || *out == '\t' || *out == '\n' || *out == '\r')
+	while (*out && is_space(*out))
 		out++;
 
-	if (*out < '0' || *out > '9')
-		return -1;
+	const char* end = out;
+	while (*end && *end != '\n' && *end != '\r')
+		end++;
 
-	int id = 0;
-	while (*out >= '0' && *out <= '9')
-		id = id * 10 + (*out++ - '0');
+	while (end > out && is_space(end[-1]))
+		end--;
 
-	return id;
+	size_t len = (size_t)(end - out);
+	if (len == 0)
+		return NULL;
+
+	char* name = malloc(len + 1);
+	if (!name)
+		return NULL;
+
+	memcpy(name, out, len);
+	name[len] = '\0';
+	return name;
 }
 
-int aerospace_mouse_monitor(aerospace* client)
+char* aerospace_mouse_visible_workspace(aerospace* client)
 {
-	const char* args[] = { "list-monitors", "--mouse", "--format", "%{monitor-id}" };
+	const char* args[] = { "list-workspaces", "--monitor", "mouse", "--visible" };
 	char* out = execute_aerospace_command(client, args, 4, "", "stdout");
-	int id = parse_monitor_id(out);
+	char* name = parse_workspace_name(out);
 	free(out);
-	return id;
-}
-
-bool aerospace_focus_monitor(aerospace* client, int monitor_id)
-{
-	// `focus-monitor` takes a monitor pattern and rejects the `mouse`
-	// selector that the --monitor flags accept, so it has to be given the
-	// resolved numeric id.
-	char id_str[16];
-	snprintf(id_str, sizeof(id_str), "%d", monitor_id);
-
-	const char* args[] = { "focus-monitor", id_str };
-	char* err = execute_aerospace_command(client, args, 2, "", NULL);
-	bool ok = (err == NULL);
-	free(err);
-	return ok;
+	return name;
 }
 
 char* aerospace_list_workspaces(aerospace* client, bool include_empty)

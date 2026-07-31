@@ -271,24 +271,39 @@ static void switch_workspace(const char* ws, char** cached_workspaces, bool* ret
 	// pointing at rather than wherever focus happens to be. Everything after
 	// this point is monitor-agnostic and unchanged.
 	//
+	// Focusing the workspace already visible on that monitor is what moves the
+	// anchor; it is a no-op when the cursor is on the focused monitor already.
+	// This mirrors SwipeAeroSpace exactly, which is the behavior this was
+	// measured against.
+	//
+	// Focus is deliberately left there. Handing it back to the original window
+	// afterward was tried and reverted: AeroSpace has no way to change a
+	// monitor's workspace without focusing it, so the round trip made the
+	// workspace visibly bounce and the space indicator blink on every swipe.
+	//
 	// Resolved once per gesture: fingers are on the trackpad, so the cursor
 	// can't move mid-swipe, and re-resolving on every one of up to max_steps
 	// switches would be pure waste.
 	if (cfg->follow_mouse_monitor && retargeted && !*retargeted) {
 		*retargeted = true;
 
-		int monitor = aerospace_mouse_monitor(g_aerospace);
-		if (monitor < 0) {
+		char* mouse_ws = aerospace_mouse_visible_workspace(g_aerospace);
+		if (!mouse_ws) {
 			// Warn once, not once per gesture — this would otherwise write a
 			// line to the log on every swipe for the whole session.
 			static bool warned = false;
 			if (!warned) {
 				warned = true;
-				fprintf(stderr, "Warning: Could not resolve the monitor under the cursor. "
+				fprintf(stderr, "Warning: Could not resolve the workspace under the cursor. "
 								"Falling back to the focused monitor.\n");
 			}
-		} else if (!aerospace_focus_monitor(g_aerospace, monitor)) {
-			fprintf(stderr, "Warning: Failed to focus monitor %d.\n", monitor);
+		} else {
+			char* err = aerospace_workspace(g_aerospace, 0, mouse_ws, "");
+			if (err) {
+				fprintf(stderr, "Warning: Failed to focus workspace '%s': %s\n", mouse_ws, err);
+				free(err);
+			}
+			free(mouse_ws);
 		}
 	}
 

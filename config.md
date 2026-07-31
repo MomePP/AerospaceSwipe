@@ -24,9 +24,11 @@ when *true*, empty workspaces are removed from the cycling order (`aerospace_lis
 
 on a multi-monitor setup, a swipe acts on the monitor **under the mouse cursor** rather than whichever monitor happens to hold keyboard focus. keyboard focus follows to that monitor.
 
-aerospace itself cannot express this: `aerospace workspace` always acts on the focused monitor and has no `--monitor` flag, and there is no focus-follows-mouse setting. so the monitor is resolved here (`list-monitors --mouse`) and focused (`focus-monitor <id>`) immediately before the switch. resolved once per gesture — your fingers are on the trackpad, so the cursor cannot move mid-swipe.
+aerospace itself cannot express this: `aerospace workspace` always acts on the focused monitor and has no `--monitor` flag, and there is no focus-follows-mouse setting. so immediately before the switch we look up the workspace already visible on the mouse's monitor (`list-workspaces --monitor mouse --visible`) and focus it (`workspace <name>`), which moves the anchor. resolved once per gesture — your fingers are on the trackpad, so the cursor cannot move mid-swipe.
 
 set *false* to restore the previous behavior, which adds no extra aerospace calls at all.
+
+**focus stays on the monitor you swiped over.** returning it to the window that had it beforehand was implemented and then reverted: aerospace cannot change a monitor's workspace without focusing it, so the round trip made the workspace visibly bounce and the space indicator blink on every swipe. this matches SwipeAeroSpace, which does the same two commands and likewise leaves focus where the swipe put it.
 
 note if you use `on-focused-monitor-changed = ['move-mouse monitor-lazy-center']` in `aerospace.toml`: this is safe, because focus only ever moves *toward* the monitor the cursor is already on, so `lazy` suppresses the cursor warp.
 

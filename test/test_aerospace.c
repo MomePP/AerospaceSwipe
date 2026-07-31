@@ -4,43 +4,62 @@
 #include "../src/aerospace.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-static void test_parse_monitor_id_plain(void)
+static void check(const char* input, const char* expected)
 {
-	assert(parse_monitor_id("1") == 1);
-	assert(parse_monitor_id("2") == 2);
-	assert(parse_monitor_id("13") == 13);
+	char* got = parse_workspace_name(input);
+
+	if (expected == NULL) {
+		assert(got == NULL);
+		return;
+	}
+
+	assert(got != NULL);
+	assert(strcmp(got, expected) == 0);
+	free(got);
 }
 
-// What the socket/CLI paths actually hand back: the CLI path strips one
-// trailing newline, the socket path does not strip anything.
-static void test_parse_monitor_id_tolerates_surrounding_space(void)
+static void test_plain_names(void)
 {
-	assert(parse_monitor_id("2\n") == 2);
-	assert(parse_monitor_id("  2") == 2);
-	assert(parse_monitor_id("\t2\r\n") == 2);
+	check("1", "1");
+	check("main", "main");
+	check("7", "7");
 }
 
-// Anything that isn't a monitor id must report failure rather than a
-// plausible-looking 0, which would be passed to `focus-monitor` as a real id.
-static void test_parse_monitor_id_rejects_non_ids(void)
+// What the socket and CLI paths actually hand back: the CLI path strips one
+// trailing newline, the socket path strips nothing.
+static void test_tolerates_surrounding_space(void)
 {
-	assert(parse_monitor_id(NULL) == -1);
-	assert(parse_monitor_id("") == -1);
-	assert(parse_monitor_id("   ") == -1);
-	assert(parse_monitor_id("-1") == -1);
-	assert(parse_monitor_id("none") == -1);
+	check("1\n", "1");
+	check("  main  ", "main");
+	check("\tdev\r\n", "dev");
+}
 
-	// execute_aerospace_command() returns stderr on a non-zero exit, so a
-	// failed query arrives here as an error message.
-	assert(parse_monitor_id("None of the monitors match the pattern(s)") == -1);
+// `--visible` returns one workspace per monitor, so a query that matched more
+// than intended must not yield a name with an embedded newline — that would go
+// straight to `workspace` as a single argument.
+static void test_keeps_only_the_first_line(void)
+{
+	check("1\n2\n3", "1");
+	check("\n\nsecond", "second");
+}
+
+static void test_rejects_empty_output(void)
+{
+	check(NULL, NULL);
+	check("", NULL);
+	check("   ", NULL);
+	check("\n\n", NULL);
 }
 
 int main(void)
 {
-	test_parse_monitor_id_plain();
-	test_parse_monitor_id_tolerates_surrounding_space();
-	test_parse_monitor_id_rejects_non_ids();
+	test_plain_names();
+	test_tolerates_surrounding_space();
+	test_keeps_only_the_first_line();
+	test_rejects_empty_output();
 	printf("All aerospace tests passed.\n");
 	return 0;
 }
