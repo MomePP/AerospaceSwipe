@@ -18,15 +18,14 @@ char* aerospace_workspace(aerospace* client, int wrap_around, const char* ws_com
 
 char* aerospace_list_workspaces(aerospace* client, bool include_empty);
 
-// Monitor id of the display the mouse cursor is currently over, or -1 if it
-// can't be resolved.
-int aerospace_mouse_monitor(aerospace* client);
+// Name of the workspace currently visible on the monitor under the mouse
+// cursor. Caller frees. NULL if it can't be resolved.
+//
+// Focus it with aerospace_workspace(client, 0, name, "") to re-anchor
+// AeroSpace's focused monitor onto the one the cursor is over.
+char* aerospace_mouse_visible_workspace(aerospace* client);
 
-// Makes monitor_id the focused monitor, so the monitor-relative commands
-// above act on it. Returns false if AeroSpace rejected the command.
-bool aerospace_focus_monitor(aerospace* client, int monitor_id);
-
-// Parses a monitor id out of `--format %{monitor-id}` output, tolerating
-// surrounding whitespace. Returns -1 for anything that isn't a non-negative
-// integer — including the error text a failed query returns.
-int parse_monitor_id(const char* out);
+// Extracts a single workspace name from command output: trims surrounding
+// whitespace and keeps only the first line. Caller frees. NULL when the
+// output holds no name at all.
+char* parse_workspace_name(const char* out);
