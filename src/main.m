@@ -52,6 +52,7 @@ static _Atomic bool g_enabled = true;
 @property (strong, nonatomic) NSMenuItem *naturalSwipeMenuItem;
 @property (strong, nonatomic) NSMenuItem *wrapAroundMenuItem;
 @property (strong, nonatomic) NSMenuItem *skipEmptyMenuItem;
+@property (strong, nonatomic) NSMenuItem *followMouseMonitorMenuItem;
 @end
 
 @implementation AppDelegate
@@ -143,6 +144,11 @@ static _Atomic bool g_enabled = true;
     self.skipEmptyMenuItem.target = self;
     self.skipEmptyMenuItem.state = cfg.skip_empty ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.skipEmptyMenuItem];
+
+    self.followMouseMonitorMenuItem = [[NSMenuItem alloc] initWithTitle:@"Follow Mouse Monitor" action:@selector(toggleFollowMouseMonitor:) keyEquivalent:@""];
+    self.followMouseMonitorMenuItem.target = self;
+    self.followMouseMonitorMenuItem.state = cfg.follow_mouse_monitor ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:self.followMouseMonitorMenuItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
@@ -236,6 +242,14 @@ static _Atomic bool g_enabled = true;
     NSLog(@"Skip empty %@", skip_empty ? @"enabled" : @"disabled");
 }
 
+- (void)toggleFollowMouseMonitor:(id)sender {
+    bool follow = config_store_toggle_follow_mouse_monitor(&g_config_store);
+
+    self.followMouseMonitorMenuItem.state = follow ? NSControlStateValueOn : NSControlStateValueOff;
+
+    NSLog(@"Follow mouse monitor %@", follow ? @"enabled" : @"disabled");
+}
+
 - (void)quit:(id)sender {
     [[NSApplication sharedApplication] terminate:nil];
 }
@@ -248,9 +262,35 @@ static _Atomic bool g_enabled = true;
 // alone, so a stale-by-milliseconds cache is still correct). Pass a
 // pointer to a caller-owned char* that starts NULL; this function fetches
 // once and fills it in, and reuses it on subsequent calls.
-static void switch_workspace(const char* ws, char** cached_workspaces, const Config* cfg)
+static void switch_workspace(const char* ws, char** cached_workspaces, bool* retargeted, const Config* cfg)
 {
 	pthread_mutex_lock(&g_aerospace_mutex);
+
+	// Re-anchor AeroSpace's focused monitor onto the one under the cursor, so
+	// the list-workspaces/workspace calls below act on the monitor the user is
+	// pointing at rather than wherever focus happens to be. Everything after
+	// this point is monitor-agnostic and unchanged.
+	//
+	// Resolved once per gesture: fingers are on the trackpad, so the cursor
+	// can't move mid-swipe, and re-resolving on every one of up to max_steps
+	// switches would be pure waste.
+	if (cfg->follow_mouse_monitor && retargeted && !*retargeted) {
+		*retargeted = true;
+
+		int monitor = aerospace_mouse_monitor(g_aerospace);
+		if (monitor < 0) {
+			// Warn once, not once per gesture — this would otherwise write a
+			// line to the log on every swipe for the whole session.
+			static bool warned = false;
+			if (!warned) {
+				warned = true;
+				fprintf(stderr, "Warning: Could not resolve the monitor under the cursor. "
+								"Falling back to the focused monitor.\n");
+			}
+		} else if (!aerospace_focus_monitor(g_aerospace, monitor)) {
+			fprintf(stderr, "Warning: Failed to focus monitor %d.\n", monitor);
+		}
+	}
 
 	if (cfg->skip_empty || cfg->wrap_around) {
 		char* workspaces = cached_workspaces ? *cached_workspaces : NULL;
@@ -307,6 +347,7 @@ static void reset_gesture_state(gesture_ctx* ctx)
 	pthread_mutex_lock(&g_aerospace_mutex);
 	free(ctx->cached_workspace_list);
 	ctx->cached_workspace_list = NULL;
+	ctx->monitor_retargeted = false;
 	pthread_mutex_unlock(&g_aerospace_mutex);
 }
 
@@ -337,7 +378,7 @@ static void maybe_dispatch_switch(gesture_ctx* ctx, Config cfg)
 
 			int step_dir = delta > 0 ? 1 : -1;
 			switch_workspace(step_dir > 0 ? cfg.swipe_right : cfg.swipe_left,
-				&ctx->cached_workspace_list, &cfg);
+				&ctx->cached_workspace_list, &ctx->monitor_retargeted, &cfg);
 
 			pthread_mutex_lock(&g_gesture_mutex);
 			ctx->executed_step += step_dir;
@@ -367,9 +408,10 @@ static void fire_single_swipe(gesture_ctx* ctx, Config cfg)
 	int step_dir = ctx->acc_dx > 0 ? 1 : -1;
 	const char* ws = step_dir > 0 ? cfg.swipe_right : cfg.swipe_left;
 	char** cache = &ctx->cached_workspace_list;
+	bool* retargeted = &ctx->monitor_retargeted;
 
 	dispatch_async(g_workspace_queue, ^{
-		switch_workspace(ws, cache, &cfg);
+		switch_workspace(ws, cache, retargeted, &cfg);
 	});
 }
 
@@ -658,13 +700,14 @@ int main(int argc, const char* argv[])
 
 		config_store_init(&g_config_store, load_config());
 		Config cfg = config_store_snapshot(&g_config_store);
-		NSLog(@"Loaded config: fingers=%d, skip_empty=%s, wrap_around=%s, haptic=%s, multi_swipe=%s, max_steps=%d, swipe_left='%s', swipe_right='%s'",
+		NSLog(@"Loaded config: fingers=%d, skip_empty=%s, wrap_around=%s, haptic=%s, multi_swipe=%s, max_steps=%d, follow_mouse_monitor=%s, swipe_left='%s', swipe_right='%s'",
 			cfg.fingers,
 			cfg.skip_empty ? "YES" : "NO",
 			cfg.wrap_around ? "YES" : "NO",
 			cfg.haptic ? "YES" : "NO",
 			cfg.multi_swipe ? "YES" : "NO",
 			cfg.max_steps,
+			cfg.follow_mouse_monitor ? "YES" : "NO",
 			cfg.swipe_left,
 			cfg.swipe_right);
 

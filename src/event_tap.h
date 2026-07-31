@@ -66,6 +66,7 @@ typedef struct {
 	float prev_x[MAX_TOUCHES];   // per-slot x position last frame, for delta computation
 	bool prev_valid[MAX_TOUCHES]; // whether prev_x[slot] describes this same finger
 	bool dispatch_in_flight;     // at most one switch-dispatch outstanding
+	bool monitor_retargeted;     // mouse's monitor already focused for this gesture
 	char* cached_workspace_list; // aerospace_list_workspaces() result, reused for this gesture
 } gesture_ctx;
 

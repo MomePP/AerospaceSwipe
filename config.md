@@ -20,6 +20,16 @@ triggers a short haptic pulse after every successful workspace switch.
 
 when *true*, empty workspaces are removed from the cycling order (`aerospace_list_workspaces()` is called with `!skip_empty`).
 
+### `follow_mouse_monitor` · *bool* · default **true**
+
+on a multi-monitor setup, a swipe acts on the monitor **under the mouse cursor** rather than whichever monitor happens to hold keyboard focus. keyboard focus follows to that monitor.
+
+aerospace itself cannot express this: `aerospace workspace` always acts on the focused monitor and has no `--monitor` flag, and there is no focus-follows-mouse setting. so the monitor is resolved here (`list-monitors --mouse`) and focused (`focus-monitor <id>`) immediately before the switch. resolved once per gesture — your fingers are on the trackpad, so the cursor cannot move mid-swipe.
+
+set *false* to restore the previous behavior, which adds no extra aerospace calls at all.
+
+note if you use `on-focused-monitor-changed = ['move-mouse monitor-lazy-center']` in `aerospace.toml`: this is safe, because focus only ever moves *toward* the monitor the cursor is already on, so `lazy` suppresses the cursor warp.
+
 ### `fingers` · *int* · default **3**
 
 exact finger count required for a gesture to register.
