@@ -27,6 +27,7 @@ typedef struct {
 	float fast_velocity_threshold; // Minimum velocity to qualify as "fast"
 	bool multi_swipe;    // fire multiple workspace switches within one continuous gesture
 	int max_steps;       // cap on workspaces crossed per gesture when multi_swipe is on
+	bool follow_mouse_monitor; // swipe acts on the monitor under the cursor, not the focused one
 	const char* swipe_left;
 	const char* swipe_right;
 } Config;
@@ -76,6 +77,7 @@ static Config default_config()
 	config.fast_velocity_threshold = 0.35f; // Velocity needed for fast-trigger
 	config.multi_swipe = true;
 	config.max_steps = 5;
+	config.follow_mouse_monitor = true;
 	config.swipe_left = "prev";
 	config.swipe_right = "next";
 
@@ -193,6 +195,10 @@ static Config load_config()
 	if (item && yyjson_is_int(item))
 		config.max_steps = (int)yyjson_get_int(item);
 
+	item = yyjson_obj_get(root, "follow_mouse_monitor");
+	if (item && yyjson_is_bool(item))
+		config.follow_mouse_monitor = yyjson_get_bool(item);
+
 	config.swipe_left = config.natural_swipe ? "next" : "prev";
 	config.swipe_right = config.natural_swipe ? "prev" : "next";
 
@@ -269,6 +275,14 @@ static inline bool config_store_toggle_wrap_around(ConfigStore* store)
 	bool wrap_around = store->config.wrap_around = !store->config.wrap_around;
 	pthread_mutex_unlock(&store->mutex);
 	return wrap_around;
+}
+
+static inline bool config_store_toggle_follow_mouse_monitor(ConfigStore* store)
+{
+	pthread_mutex_lock(&store->mutex);
+	bool follow = store->config.follow_mouse_monitor = !store->config.follow_mouse_monitor;
+	pthread_mutex_unlock(&store->mutex);
+	return follow;
 }
 
 static inline bool config_store_toggle_skip_empty(ConfigStore* store)

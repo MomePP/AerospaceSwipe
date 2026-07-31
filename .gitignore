@@ -29,10 +29,12 @@ test_touch_slots
 test_gesture_math
 test_config
 test_config_store
+test_aerospace
 test_touch_slots.dSYM
 test_gesture_math.dSYM
 test_config.dSYM
 test_config_store.dSYM
+test_aerospace.dSYM
 
 # Local git worktrees
 .worktrees/

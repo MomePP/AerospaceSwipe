@@ -78,12 +78,14 @@ TEST_TARGET = test_touch_slots
 GESTURE_MATH_TEST_TARGET = test_gesture_math
 CONFIG_TEST_TARGET = test_config
 CONFIG_STORE_TEST_TARGET = test_config_store
+AEROSPACE_TEST_TARGET = test_aerospace
 
-test: $(TEST_TARGET) $(GESTURE_MATH_TEST_TARGET) $(CONFIG_TEST_TARGET) $(CONFIG_STORE_TEST_TARGET)
+test: $(TEST_TARGET) $(GESTURE_MATH_TEST_TARGET) $(CONFIG_TEST_TARGET) $(CONFIG_STORE_TEST_TARGET) $(AEROSPACE_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(GESTURE_MATH_TEST_TARGET)
 	./$(CONFIG_TEST_TARGET)
 	./$(CONFIG_STORE_TEST_TARGET)
+	./$(AEROSPACE_TEST_TARGET)
 
 $(TEST_TARGET): src/event_tap.m test/test_touch_slots.m
 	$(CC) $(CFLAGS) $(ARCH) -o $(TEST_TARGET) src/event_tap.m test/test_touch_slots.m $(FRAMEWORKS) $(LDLIBS)
@@ -98,6 +100,9 @@ $(CONFIG_TEST_TARGET): src/yyjson.c test/test_config.c
 # than CFLAGS — TSan is incompatible with -flto and doesn't mix with -O3.
 $(CONFIG_STORE_TEST_TARGET): src/yyjson.c src/config.h test/test_config_store.c
 	$(CC) -std=c99 -O1 -g -Wall -Wextra -Wno-unused-function -fsanitize=thread -framework CoreFoundation -o $(CONFIG_STORE_TEST_TARGET) src/yyjson.c test/test_config_store.c -lm
+
+$(AEROSPACE_TEST_TARGET): src/aerospace.c src/yyjson.c test/test_aerospace.c
+	$(CC) -std=c99 -O0 -g -Wall -Wextra -o $(AEROSPACE_TEST_TARGET) src/aerospace.c src/yyjson.c test/test_aerospace.c -lm
 
 sign: $(TARGET)
 	@echo "Signing $(TARGET) with accessibility entitlement..."
@@ -133,4 +138,4 @@ format:
 	clang-format -i -- **/**.c **/**.h **/**.m
 
 clean:
-	rm -rf $(TARGET) $(APP_BUNDLE) $(TEST_TARGET) $(GESTURE_MATH_TEST_TARGET) $(CONFIG_TEST_TARGET) $(CONFIG_STORE_TEST_TARGET)
+	rm -rf $(TARGET) $(APP_BUNDLE) $(TEST_TARGET) $(GESTURE_MATH_TEST_TARGET) $(CONFIG_TEST_TARGET) $(CONFIG_STORE_TEST_TARGET) $(AEROSPACE_TEST_TARGET)
