@@ -15,6 +15,7 @@ static void test_default_config_follow_mouse_monitor(void)
 {
 	Config config = default_config();
 	assert(config.follow_mouse_monitor == true);
+	assert(config.restore_focus == true);
 }
 
 int main(void)

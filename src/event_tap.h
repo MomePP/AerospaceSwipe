@@ -67,6 +67,11 @@ typedef struct {
 	bool prev_valid[MAX_TOUCHES]; // whether prev_x[slot] describes this same finger
 	bool dispatch_in_flight;     // at most one switch-dispatch outstanding
 	bool monitor_retargeted;     // mouse's monitor already focused for this gesture
+	// Set only when the retarget actually crossed monitors and restore_focus
+	// is on: what to hand focus (and the cursor) back to once the gesture ends.
+	bool restore_pending;
+	int saved_window;            // window that held focus before the retarget, or -1
+	CGPoint saved_cursor;        // cursor position before the retarget
 	char* cached_workspace_list; // aerospace_list_workspaces() result, reused for this gesture
 } gesture_ctx;
 

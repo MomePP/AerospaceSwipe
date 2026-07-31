@@ -22,11 +22,22 @@ char* aerospace_list_workspaces(aerospace* client, bool include_empty);
 // can't be resolved.
 int aerospace_mouse_monitor(aerospace* client);
 
+// Monitor id that currently holds focus, or -1.
+int aerospace_focused_monitor(aerospace* client);
+
+// Window id that currently holds focus, or -1 when the focused workspace is
+// empty.
+int aerospace_focused_window(aerospace* client);
+
 // Makes monitor_id the focused monitor, so the monitor-relative commands
 // above act on it. Returns false if AeroSpace rejected the command.
 bool aerospace_focus_monitor(aerospace* client, int monitor_id);
 
-// Parses a monitor id out of `--format %{monitor-id}` output, tolerating
+// Returns focus to a specific window. Returns false if AeroSpace rejected the
+// command — e.g. the window has since been closed.
+bool aerospace_focus_window(aerospace* client, int window_id);
+
+// Parses a non-negative id out of `--format %{...-id}` output, tolerating
 // surrounding whitespace. Returns -1 for anything that isn't a non-negative
 // integer — including the error text a failed query returns.
-int parse_monitor_id(const char* out);
+int parse_id(const char* out);
