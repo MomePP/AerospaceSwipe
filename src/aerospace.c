@@ -438,7 +438,7 @@ char* aerospace_workspace(aerospace* client, int wrap_around, const char* ws_com
 	return execute_aerospace_command(client, args, arg_count, stdin_payload, NULL);
 }
 
-int parse_id(const char* out)
+int parse_monitor_id(const char* out)
 {
 	if (!out)
 		return -1;
@@ -460,39 +460,9 @@ int aerospace_mouse_monitor(aerospace* client)
 {
 	const char* args[] = { "list-monitors", "--mouse", "--format", "%{monitor-id}" };
 	char* out = execute_aerospace_command(client, args, 4, "", "stdout");
-	int id = parse_id(out);
+	int id = parse_monitor_id(out);
 	free(out);
 	return id;
-}
-
-int aerospace_focused_monitor(aerospace* client)
-{
-	const char* args[] = { "list-monitors", "--focused", "--format", "%{monitor-id}" };
-	char* out = execute_aerospace_command(client, args, 4, "", "stdout");
-	int id = parse_id(out);
-	free(out);
-	return id;
-}
-
-int aerospace_focused_window(aerospace* client)
-{
-	const char* args[] = { "list-windows", "--focused", "--format", "%{window-id}" };
-	char* out = execute_aerospace_command(client, args, 4, "", "stdout");
-	int id = parse_id(out);
-	free(out);
-	return id;
-}
-
-bool aerospace_focus_window(aerospace* client, int window_id)
-{
-	char id_str[16];
-	snprintf(id_str, sizeof(id_str), "%d", window_id);
-
-	const char* args[] = { "focus", "--window-id", id_str };
-	char* err = execute_aerospace_command(client, args, 3, "", NULL);
-	bool ok = (err == NULL);
-	free(err);
-	return ok;
 }
 
 bool aerospace_focus_monitor(aerospace* client, int monitor_id)

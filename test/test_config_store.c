@@ -82,7 +82,6 @@ static void* writer_thread(void* arg)
 		config_store_toggle_skip_empty(&g_store);
 		config_store_toggle_haptic(&g_store);
 		config_store_toggle_follow_mouse_monitor(&g_store);
-		config_store_toggle_restore_focus(&g_store);
 	}
 
 	atomic_store(&g_writer_done, true);

@@ -28,13 +28,7 @@ aerospace itself cannot express this: `aerospace workspace` always acts on the f
 
 set *false* to restore the previous behavior, which adds no extra aerospace calls at all.
 
-### `restore_focus` · *bool* · default **true**
-
-only meaningful when `follow_mouse_monitor` is on **and** the cursor is on a different monitor than the focused window.
-
-when *true*, keyboard focus goes back to the window that had it before the swipe — so you can flick the space on a second monitor while continuing to type where you were. when *false*, focus stays on the monitor you swiped over.
-
-the cursor is put back too, and that part is not redundant. if you use `on-focused-monitor-changed = ['move-mouse monitor-lazy-center']` in `aerospace.toml`, handing focus back across monitors drags the pointer with it — off the monitor you were aiming at, which would also make your *next* swipe target the wrong monitor. aerospace runs that hook before replying to the focus command, so warping the cursor back afterwards is deterministic rather than a race. your `aerospace.toml` needs no changes.
+note if you use `on-focused-monitor-changed = ['move-mouse monitor-lazy-center']` in `aerospace.toml`: this is safe, because focus only ever moves *toward* the monitor the cursor is already on, so `lazy` suppresses the cursor warp.
 
 ### `fingers` · *int* · default **3**
 

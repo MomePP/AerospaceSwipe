@@ -28,7 +28,6 @@ typedef struct {
 	bool multi_swipe;    // fire multiple workspace switches within one continuous gesture
 	int max_steps;       // cap on workspaces crossed per gesture when multi_swipe is on
 	bool follow_mouse_monitor; // swipe acts on the monitor under the cursor, not the focused one
-	bool restore_focus;        // after switching, hand focus back to the window that had it
 	const char* swipe_left;
 	const char* swipe_right;
 } Config;
@@ -79,7 +78,6 @@ static Config default_config()
 	config.multi_swipe = true;
 	config.max_steps = 5;
 	config.follow_mouse_monitor = true;
-	config.restore_focus = true;
 	config.swipe_left = "prev";
 	config.swipe_right = "next";
 
@@ -201,10 +199,6 @@ static Config load_config()
 	if (item && yyjson_is_bool(item))
 		config.follow_mouse_monitor = yyjson_get_bool(item);
 
-	item = yyjson_obj_get(root, "restore_focus");
-	if (item && yyjson_is_bool(item))
-		config.restore_focus = yyjson_get_bool(item);
-
 	config.swipe_left = config.natural_swipe ? "next" : "prev";
 	config.swipe_right = config.natural_swipe ? "prev" : "next";
 
@@ -289,14 +283,6 @@ static inline bool config_store_toggle_follow_mouse_monitor(ConfigStore* store)
 	bool follow = store->config.follow_mouse_monitor = !store->config.follow_mouse_monitor;
 	pthread_mutex_unlock(&store->mutex);
 	return follow;
-}
-
-static inline bool config_store_toggle_restore_focus(ConfigStore* store)
-{
-	pthread_mutex_lock(&store->mutex);
-	bool restore = store->config.restore_focus = !store->config.restore_focus;
-	pthread_mutex_unlock(&store->mutex);
-	return restore;
 }
 
 static inline bool config_store_toggle_skip_empty(ConfigStore* store)

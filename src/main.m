@@ -53,7 +53,6 @@ static _Atomic bool g_enabled = true;
 @property (strong, nonatomic) NSMenuItem *wrapAroundMenuItem;
 @property (strong, nonatomic) NSMenuItem *skipEmptyMenuItem;
 @property (strong, nonatomic) NSMenuItem *followMouseMonitorMenuItem;
-@property (strong, nonatomic) NSMenuItem *restoreFocusMenuItem;
 @end
 
 @implementation AppDelegate
@@ -150,11 +149,6 @@ static _Atomic bool g_enabled = true;
     self.followMouseMonitorMenuItem.target = self;
     self.followMouseMonitorMenuItem.state = cfg.follow_mouse_monitor ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.followMouseMonitorMenuItem];
-
-    self.restoreFocusMenuItem = [[NSMenuItem alloc] initWithTitle:@"Restore Focus After Swipe" action:@selector(toggleRestoreFocus:) keyEquivalent:@""];
-    self.restoreFocusMenuItem.target = self;
-    self.restoreFocusMenuItem.state = cfg.restore_focus ? NSControlStateValueOn : NSControlStateValueOff;
-    [menu addItem:self.restoreFocusMenuItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
@@ -256,14 +250,6 @@ static _Atomic bool g_enabled = true;
     NSLog(@"Follow mouse monitor %@", follow ? @"enabled" : @"disabled");
 }
 
-- (void)toggleRestoreFocus:(id)sender {
-    bool restore = config_store_toggle_restore_focus(&g_config_store);
-
-    self.restoreFocusMenuItem.state = restore ? NSControlStateValueOn : NSControlStateValueOff;
-
-    NSLog(@"Restore focus after swipe %@", restore ? @"enabled" : @"disabled");
-}
-
 - (void)quit:(id)sender {
     [[NSApplication sharedApplication] terminate:nil];
 }
@@ -276,99 +262,35 @@ static _Atomic bool g_enabled = true;
 // alone, so a stale-by-milliseconds cache is still correct). Pass a
 // pointer to a caller-owned char* that starts NULL; this function fetches
 // once and fills it in, and reuses it on subsequent calls.
-static CGPoint current_cursor(void)
+static void switch_workspace(const char* ws, char** cached_workspaces, bool* retargeted, const Config* cfg)
 {
-	CGEventRef probe = CGEventCreate(NULL);
-	CGPoint at = CGEventGetLocation(probe);
-	CFRelease(probe);
-	return at;
-}
+	pthread_mutex_lock(&g_aerospace_mutex);
 
-// Re-anchors AeroSpace's focused monitor onto the one under the cursor, so the
-// list-workspaces/workspace calls act on the monitor the user is pointing at
-// rather than wherever focus happens to be. Everything downstream stays
-// monitor-agnostic and unchanged.
-//
-// Runs once per gesture: fingers are on the trackpad, so the cursor can't move
-// mid-swipe, and re-resolving on each of up to max_steps switches is waste.
-// Caller must hold g_aerospace_mutex.
-static void retarget_to_mouse_monitor(gesture_ctx* ctx, const Config* cfg)
-{
-	if (!cfg->follow_mouse_monitor || !ctx || ctx->monitor_retargeted)
-		return;
+	// Re-anchor AeroSpace's focused monitor onto the one under the cursor, so
+	// the list-workspaces/workspace calls below act on the monitor the user is
+	// pointing at rather than wherever focus happens to be. Everything after
+	// this point is monitor-agnostic and unchanged.
+	//
+	// Resolved once per gesture: fingers are on the trackpad, so the cursor
+	// can't move mid-swipe, and re-resolving on every one of up to max_steps
+	// switches would be pure waste.
+	if (cfg->follow_mouse_monitor && retargeted && !*retargeted) {
+		*retargeted = true;
 
-	ctx->monitor_retargeted = true;
-
-	int mouse_monitor = aerospace_mouse_monitor(g_aerospace);
-	int focused_monitor = aerospace_focused_monitor(g_aerospace);
-
-	if (mouse_monitor < 0 || focused_monitor < 0) {
-		// Warn once, not once per gesture — this would otherwise write a line
-		// to the log on every swipe for the whole session.
-		static bool warned = false;
-		if (!warned) {
-			warned = true;
-			fprintf(stderr, "Warning: Could not resolve the monitor under the cursor. "
-							"Falling back to the focused monitor.\n");
+		int monitor = aerospace_mouse_monitor(g_aerospace);
+		if (monitor < 0) {
+			// Warn once, not once per gesture — this would otherwise write a
+			// line to the log on every swipe for the whole session.
+			static bool warned = false;
+			if (!warned) {
+				warned = true;
+				fprintf(stderr, "Warning: Could not resolve the monitor under the cursor. "
+								"Falling back to the focused monitor.\n");
+			}
+		} else if (!aerospace_focus_monitor(g_aerospace, monitor)) {
+			fprintf(stderr, "Warning: Failed to focus monitor %d.\n", monitor);
 		}
-		return;
 	}
-
-	// Already pointing at the focused monitor: nothing to re-anchor, and
-	// nothing to restore afterward either. This is every single-monitor setup.
-	if (mouse_monitor == focused_monitor)
-		return;
-
-	// Capture before moving focus, so the restore has the real starting point.
-	if (cfg->restore_focus) {
-		ctx->saved_window = aerospace_focused_window(g_aerospace);
-		ctx->saved_cursor = current_cursor();
-		ctx->restore_pending = true;
-	}
-
-	if (!aerospace_focus_monitor(g_aerospace, mouse_monitor))
-		fprintf(stderr, "Warning: Failed to focus monitor %d.\n", mouse_monitor);
-}
-
-// Hands focus back to whatever held it before the gesture re-anchored onto the
-// mouse's monitor, then puts the cursor back.
-//
-// The cursor step is not redundant. A common AeroSpace config —
-// `on-focused-monitor-changed = ['move-mouse monitor-lazy-center']` — warps the
-// pointer whenever the focused monitor changes, so handing focus back across
-// monitors drags the cursor with it, off the monitor the user is aiming at and
-// onto the other one. That would also make the *next* swipe target the wrong
-// monitor. AeroSpace runs that hook before replying to the focus command, so
-// warping back afterward is deterministic rather than a race.
-//
-// Runs on the workspace queue, which is serial, so every switch this gesture
-// queued has already completed by the time this lands.
-static void restore_focus_after_gesture(gesture_ctx* ctx)
-{
-	pthread_mutex_lock(&g_aerospace_mutex);
-
-	if (ctx->restore_pending) {
-		if (ctx->saved_window >= 0 && !aerospace_focus_window(g_aerospace, ctx->saved_window))
-			fprintf(stderr, "Warning: Could not return focus to window %d.\n", ctx->saved_window);
-
-		CGWarpMouseCursorPosition(ctx->saved_cursor);
-		CGAssociateMouseAndMouseCursorPosition(true);
-	}
-
-	ctx->restore_pending = false;
-	ctx->saved_window = -1;
-	ctx->monitor_retargeted = false;
-
-	pthread_mutex_unlock(&g_aerospace_mutex);
-}
-
-static void switch_workspace(const char* ws, gesture_ctx* ctx, const Config* cfg)
-{
-	pthread_mutex_lock(&g_aerospace_mutex);
-
-	retarget_to_mouse_monitor(ctx, cfg);
-
-	char** cached_workspaces = ctx ? &ctx->cached_workspace_list : NULL;
 
 	if (cfg->skip_empty || cfg->wrap_around) {
 		char* workspaces = cached_workspaces ? *cached_workspaces : NULL;
@@ -425,15 +347,8 @@ static void reset_gesture_state(gesture_ctx* ctx)
 	pthread_mutex_lock(&g_aerospace_mutex);
 	free(ctx->cached_workspace_list);
 	ctx->cached_workspace_list = NULL;
+	ctx->monitor_retargeted = false;
 	pthread_mutex_unlock(&g_aerospace_mutex);
-
-	// Queued rather than run here: the workspace queue is serial, so this
-	// lands after every switch this gesture dispatched, and it is what clears
-	// monitor_retargeted — so the next gesture can't re-anchor until the
-	// previous one has handed focus back.
-	dispatch_async(g_workspace_queue, ^{
-		restore_focus_after_gesture(ctx);
-	});
 }
 
 // At most one dispatch is ever outstanding: if one is already converging
@@ -462,7 +377,8 @@ static void maybe_dispatch_switch(gesture_ctx* ctx, Config cfg)
 				break;
 
 			int step_dir = delta > 0 ? 1 : -1;
-			switch_workspace(step_dir > 0 ? cfg.swipe_right : cfg.swipe_left, ctx, &cfg);
+			switch_workspace(step_dir > 0 ? cfg.swipe_right : cfg.swipe_left,
+				&ctx->cached_workspace_list, &ctx->monitor_retargeted, &cfg);
 
 			pthread_mutex_lock(&g_gesture_mutex);
 			ctx->executed_step += step_dir;
@@ -491,8 +407,11 @@ static void fire_single_swipe(gesture_ctx* ctx, Config cfg)
 
 	int step_dir = ctx->acc_dx > 0 ? 1 : -1;
 	const char* ws = step_dir > 0 ? cfg.swipe_right : cfg.swipe_left;
+	char** cache = &ctx->cached_workspace_list;
+	bool* retargeted = &ctx->monitor_retargeted;
+
 	dispatch_async(g_workspace_queue, ^{
-		switch_workspace(ws, ctx, &cfg);
+		switch_workspace(ws, cache, retargeted, &cfg);
 	});
 }
 
@@ -781,7 +700,7 @@ int main(int argc, const char* argv[])
 
 		config_store_init(&g_config_store, load_config());
 		Config cfg = config_store_snapshot(&g_config_store);
-		NSLog(@"Loaded config: fingers=%d, skip_empty=%s, wrap_around=%s, haptic=%s, multi_swipe=%s, max_steps=%d, follow_mouse_monitor=%s, restore_focus=%s, swipe_left='%s', swipe_right='%s'",
+		NSLog(@"Loaded config: fingers=%d, skip_empty=%s, wrap_around=%s, haptic=%s, multi_swipe=%s, max_steps=%d, follow_mouse_monitor=%s, swipe_left='%s', swipe_right='%s'",
 			cfg.fingers,
 			cfg.skip_empty ? "YES" : "NO",
 			cfg.wrap_around ? "YES" : "NO",
@@ -789,7 +708,6 @@ int main(int argc, const char* argv[])
 			cfg.multi_swipe ? "YES" : "NO",
 			cfg.max_steps,
 			cfg.follow_mouse_monitor ? "YES" : "NO",
-			cfg.restore_focus ? "YES" : "NO",
 			cfg.swipe_left,
 			cfg.swipe_right);
 
@@ -804,11 +722,6 @@ int main(int argc, const char* argv[])
 			if (!g_haptic)
 				fprintf(stderr, "Warning: Failed to initialize haptic actuator. Continuing without haptics.\n");
 		}
-
-		// -1 is "no window", which 0-initialization would otherwise spell as
-		// window id 0. Only ever read behind restore_pending, but the trap is
-		// cheap to remove.
-		g_gesture_ctx.saved_window = -1;
 
 		g_gesture_queue = dispatch_queue_create("aerospace-swipe.gesture", DISPATCH_QUEUE_SERIAL);
 		g_workspace_queue = dispatch_queue_create("aerospace-swipe.workspace", DISPATCH_QUEUE_SERIAL);
