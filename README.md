@@ -1,19 +1,22 @@
-# aerospace workspace switching with trackpad swipes
+# AerospaceSwipe — aerospace workspace switching with trackpad swipes
 
 <img src="Resources/AppIcon.png" width="96" align="right" alt="AerospaceSwipe icon">
 
-aerospace-swipe detects x-fingered(defaults to 3) swipes on your trackpad and correspondingly switches between [aerospace](https://github.com/nikitabobko/AeroSpace) workspaces.
+AerospaceSwipe detects x-fingered(defaults to 3) swipes on your trackpad and correspondingly switches between [aerospace](https://github.com/nikitabobko/AeroSpace) workspaces.
 
-> a fork of [acsandmann/aerospace-swipe](https://github.com/acsandmann/aerospace-swipe) — all credit for the
-> original project goes to [@acsandmann](https://github.com/acsandmann). this fork adds stable per-finger touch
-> tracking, continuous multi-step swiping, adjustable sensitivity, a menu bar with runtime controls, an app
-> icon, and a homebrew tap. see [acknowledgements](#acknowledgements).
+> originally forked from [acsandmann/aerospace-swipe](https://github.com/acsandmann/aerospace-swipe), now maintained
+> as a standalone repository — all credit for the original project goes to [@acsandmann](https://github.com/acsandmann).
+> on top of it this adds stable per-finger touch tracking, continuous multi-step swiping, adjustable sensitivity,
+> multi-monitor targeting, scroll suppression, a menu bar with runtime controls, an app icon, and a homebrew tap.
+> see [acknowledgements](#acknowledgements).
 
 ## features
 - fast swipe detection and forwarding to aerospace (uses aerospace server's socket instead of cli)
 - works with any number of fingers (default is 3, can be changed in config)
 - adjustable sensitivity (Low/Medium/High)
 - multi-step swiping: cross more than one workspace in a single continuous gesture, switching live as you swipe (can be disabled for one-switch-per-gesture instead, with velocity-based early triggering for fast flicks)
+- targets the monitor under the cursor, not just the focused one (can be disabled in config)
+- swallows the swipe's scroll stream, so the app under the cursor doesn't also react to it (e.g. Arc's sidebar no longer switches spaces on a 4-finger swipe)
 - optional menu bar icon with runtime controls for all settings
 - skips empty workspaces (if enabled in config)
 - ignores your palm if it is resting on the trackpad
@@ -39,9 +42,13 @@ config file is optional and only needed if you want to change the default settin
   "sensitivity": 2,      // 1=Low, 2=Medium, 3=High
   "show_menu_bar": true, // Show menu bar icon with controls
   "multi_swipe": true,   // Cross multiple workspaces in one continuous gesture, live
-  "max_steps": 5         // Cap on workspaces crossed per gesture when multi_swipe is on
+  "max_steps": 5,        // Cap on workspaces crossed per gesture when multi_swipe is on
+  "follow_mouse_monitor": true // Switch the workspace on the monitor under the cursor
 }
 ```
+
+> if you use 3 or 4 fingers, turn off the matching "Swipe between full-screen applications" gesture in
+> System Settings › Trackpad › More Gestures, otherwise macOS handles the swipe itself.
 
 ## installation
 ### homebrew (recommended)
@@ -58,9 +65,20 @@ brew services start aerospace-swipe # installs + loads the launchd service
 
 ### manual
 ```bash
-git clone https://github.com/MomePP/aerospace-swipe.git
-cd aerospace-swipe
+git clone https://github.com/MomePP/AerospaceSwipe.git
+cd AerospaceSwipe
 ./install.sh # or: make install
+```
+
+### keeping accessibility permission across `brew upgrade`
+homebrew builds the app ad-hoc signed, so macOS drops its Accessibility grant on every upgrade. to make the grant
+survive, create a local signing identity once (from a checkout: `./setup-codesign-identity.sh`), then after each
+upgrade re-sign and restart:
+```bash
+codesign --force --sign "AerospaceSwipe Local Signing" \
+  --entitlements /opt/homebrew/opt/aerospace-swipe/accessibility.entitlements \
+  /opt/homebrew/opt/aerospace-swipe/AerospaceSwipe.app
+brew services restart aerospace-swipe
 ```
 ## uninstallation
 ### homebrew
@@ -70,11 +88,11 @@ brew uninstall aerospace-swipe
 ```
 ### manual
 ```bash
-cd aerospace-swipe # wherever you cloned it, e.g. ~/.local/share/aerospace-swipe
+cd AerospaceSwipe # wherever you cloned it, e.g. ~/.local/share/aerospace-swipe
 ./uninstall.sh # or: make uninstall
 ```
 
 ## acknowledgements
-- [acsandmann/aerospace-swipe](https://github.com/acsandmann/aerospace-swipe) — the original project this is forked from, by [@acsandmann](https://github.com/acsandmann)
+- [acsandmann/aerospace-swipe](https://github.com/acsandmann/aerospace-swipe) — the original project this was forked from, by [@acsandmann](https://github.com/acsandmann)
 - [nikitabobko/AeroSpace](https://github.com/nikitabobko/AeroSpace) — the tiling window manager this drives
 - [ibireme/yyjson](https://github.com/ibireme/yyjson) — json serialization/deserialization
