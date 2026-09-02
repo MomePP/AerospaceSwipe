@@ -132,11 +132,14 @@ bool event_tap_enabled(struct event_tap* event_tap)
 
 bool event_tap_begin(struct event_tap* event_tap, CGEventRef (*reference)(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void* userdata))
 {
-	event_tap->mask = 1 << NSEventTypeGesture;
+	// Scroll events are tapped as well so a swipe's scroll stream can be
+	// dropped before it reaches the app under the cursor — which requires
+	// an active (not listen-only) tap. See scroll_gate in gesture_math.h.
+	event_tap->mask = CGEventMaskBit(NSEventTypeGesture) | CGEventMaskBit(kCGEventScrollWheel);
 	event_tap->handle = CGEventTapCreate(
 		kCGHIDEventTap,
 		kCGHeadInsertEventTap,
-		kCGEventTapOptionListenOnly,
+		kCGEventTapOptionDefault,
 		event_tap->mask,
 		*reference,
 		event_tap);

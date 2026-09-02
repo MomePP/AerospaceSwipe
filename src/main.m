@@ -41,6 +41,10 @@ static pthread_mutex_t g_aerospace_mutex = PTHREAD_MUTEX_INITIALIZER;
 // Toggled from the menu on the main thread, read on the event-tap thread.
 static _Atomic bool g_enabled = true;
 
+// Only ever touched on the event-tap thread: fed from process_touches(),
+// consulted for every scroll event in key_handler().
+static scroll_gate g_scroll_gate = { 0 };
+
 // Menu bar app delegate
 @interface AppDelegate : NSObject <NSApplicationDelegate> {
     NSMenuItem *_sensitivityItems[3];
@@ -585,7 +589,7 @@ unlock:
 	pthread_mutex_unlock(&g_gesture_mutex);
 }
 
-static void process_touches(NSSet<NSTouch*>* touches)
+static void process_touches(NSSet<NSTouch*>* touches, int fingers)
 {
 	NSUInteger buf_capacity = touches.count > 0 ? touches.count : 4;
 	touch* buf = malloc(sizeof(touch) * buf_capacity);
@@ -610,6 +614,8 @@ static void process_touches(NSSet<NSTouch*>* touches)
 		buf[i++] = [TouchConverter convert_nstouch:touch];
 	}
 
+	scroll_gate_touches(&g_scroll_gate, (int)i, fingers);
+
 	dispatch_async(g_gesture_queue, ^{
 		gestureCallback(buf, (int)i);
 		free(buf);
@@ -633,6 +639,15 @@ static CGEventRef key_handler(__unused CGEventTapProxy proxy, CGEventType type,
 		return event;
 	}
 
+	if (!g_enabled)
+		return event;
+
+	if (type == kCGEventScrollWheel) {
+		int64_t phase = CGEventGetIntegerValueField(event, kCGScrollWheelEventScrollPhase);
+		bool began = phase & (kCGScrollPhaseBegan | kCGScrollPhaseMayBegin);
+		return scroll_gate_should_drop(&g_scroll_gate, began) ? NULL : event;
+	}
+
 	if (type != NSEventTypeGesture)
 		return event;
 
@@ -642,7 +657,7 @@ static CGEventRef key_handler(__unused CGEventTapProxy proxy, CGEventType type,
 	if (!touches.count)
 		return event;
 
-	process_touches(touches);
+	process_touches(touches, config_store_snapshot(&g_config_store).fingers);
 
 	return event;
 }
