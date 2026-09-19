@@ -5,8 +5,10 @@ state machine was replaced rather than patched.
 
 ## Continuous accumulated displacement
 
-`gesture_ctx` has two states — `GS_IDLE` and `GS_TRACKING` — and accumulates
-signed horizontal displacement in `acc_dx` for the whole gesture. The target
+`gesture_ctx` has two states — `GS_IDLE` and `GS_TRACKING` — and tracks signed
+horizontal displacement per contact for the whole gesture; `acc_dx` is the
+moving fingers' mean of it, excluding a resting palm (see touch-tracking,
+"Palm rejection"). The target
 step count is derived from it (`compute_target_step()`: `acc_dx / distance_pct`,
 clamped to `max_steps`), and the delta between target and `executed_step` is
 what fires. Swiping further in the same direction simply raises the target.
@@ -24,8 +26,11 @@ Axis is locked **once** per gesture (`decide_axis()`), not re-checked per frame.
 A per-frame check let a diagonal correction mid-swipe retroactively cancel an
 already-progressing horizontal gesture.
 
-Once `GS_TRACKING` starts, a frame whose finger count doesn't match `fingers`
-is skipped, not reset. Only a true full release (`count == 0`) ends the gesture.
+A gesture starts at `fingers` **or more** contacts (extras may be a palm).
+Once `GS_TRACKING` starts, finger-count drift doesn't reset it. The gesture
+ends on a full release (`count == 0`) or once only a resting palm is left
+(`only_palms_remain()`). A switch fires only while `swipe_contacts()` sees
+exactly `fingers` non-palm contacts moving together.
 
 ## Bounded, lossless dispatch
 
@@ -70,7 +75,8 @@ still describes the right cycling order.
 ## Single-swipe mode
 
 With `multi_swipe: false`, nothing fires mid-gesture; exactly one step fires at
-release, if `|acc_dx|` clears the threshold. The fast-flick early-trigger fields
+gesture end (fingers lifted — a resting palm may stay down), if the moving
+fingers' mean displacement clears the threshold. The fast-flick early-trigger fields
 (`fast_distance_factor`, `fast_velocity_threshold`) apply **only** to this path —
 the live multi-step path is already proportional to distance, so a fast flick
 naturally crosses more steps without a separate rule.

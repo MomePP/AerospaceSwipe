@@ -20,9 +20,6 @@ typedef struct {
 	int sensitivity;      // 1-5 scale, affects distance_pct
 	float distance_pct;   // distance
 	float settle_factor;  // unused by current gesture logic; left as-is, predates this change
-	float palm_disp;
-	CFTimeInterval palm_age;
-	float palm_velocity;
 	float fast_distance_factor;   // For fast swipes, trigger at this fraction of distance_pct
 	float fast_velocity_threshold; // Minimum velocity to qualify as "fast"
 	bool multi_swipe;    // fire multiple workspace switches within one continuous gesture
@@ -70,9 +67,6 @@ static Config default_config()
 	config.fingers = 3;
 	config.sensitivity = 2;          // Default sensitivity level (1=Low, 2=Medium, 3=High)
 	config.settle_factor = 0.25f;    // ≤25% of flick speed -> ended (unused, predates this change)
-	config.palm_disp = 0.025;        // 2.5% pad from origin
-	config.palm_age = 0.06;          // 60ms before judgment
-	config.palm_velocity = 0.1;      // 10% of pad dimension per second
 	config.fast_distance_factor = 0.60f;   // Fast swipes can trigger at 60% of normal distance
 	config.fast_velocity_threshold = 0.35f; // Velocity needed for fast-trigger
 	config.multi_swipe = true;
