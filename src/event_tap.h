@@ -9,6 +9,8 @@
 #include "gesture_math.h"
 
 #define ACTIVATE_PCT 0.05f
+#define PALM_MIN_SHARE 0.3f // movers need >= 30% of the fingers' mean dx; still contacts < 30%
+#define PALM_ISOLATION 0.5f // a contact farther than this from every other is a palm
 #define END_PHASE 8 // NSTouchPhaseEnded
 #define CANCEL_PHASE 16 // NSTouchPhaseCancelled
 #define MAX_TOUCHES 16
@@ -60,11 +62,14 @@ typedef struct {
 	gesture_state state;
 	swipe_axis axis;
 	float start_x, start_y;      // average position at gesture start (axis-lock reference)
-	float acc_dx;                // accumulated horizontal displacement this gesture
+	float acc_dx;                // moving fingers' mean displacement (swipe_contacts), multi_swipe only
 	float peak_velx;             // fastest horizontal velocity seen this gesture
 	int executed_step;           // workspace switches actually performed this gesture (signed)
-	float prev_x[MAX_TOUCHES];   // per-slot x position last frame, for delta computation
-	bool prev_valid[MAX_TOUCHES]; // whether prev_x[slot] describes this same finger
+	float prev_x[MAX_TOUCHES];   // per-slot x position last frame, valid while slot_live
+	float slot_dx[MAX_TOUCHES];   // per-slot horizontal displacement since the contact joined
+	float slot_x0[MAX_TOUCHES], slot_y0[MAX_TOUCHES]; // where the contact joined (palm isolation)
+	bool slot_tracked[MAX_TOUCHES]; // contact joined before the axis locked (palm-rejection input)
+	bool slot_live[MAX_TOUCHES];  // ...and that same contact is still down
 	bool dispatch_in_flight;     // at most one switch-dispatch outstanding
 	bool monitor_retargeted;     // mouse's monitor already focused for this gesture
 	char* cached_workspace_list; // aerospace_list_workspaces() result, reused for this gesture

@@ -19,7 +19,7 @@ AerospaceSwipe detects x-fingered(defaults to 3) swipes on your trackpad and cor
 - swallows the swipe's scroll stream, so the app under the cursor doesn't also react to it (e.g. Arc's sidebar no longer switches spaces on a 4-finger swipe)
 - optional menu bar icon with runtime controls for all settings
 - skips empty workspaces (if enabled in config)
-- ignores your palm if it is resting on the trackpad
+- ignores a resting palm: you can swipe with your palm down, and a 3-finger drag with your palm down is not read as a 4-finger swipe
 - haptics on swipe (this is off by default)
 - customizable swipe directions (natural or inverted)
 - swipe will wrap around workspaces (ex 1-9 workspaces, swipe right from 9 will go to 1)

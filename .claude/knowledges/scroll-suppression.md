@@ -31,10 +31,13 @@ nothing):
 
 ## The gate
 
-`scroll_gate` in `gesture_math.[ch]` is a pure two-flag state machine, fed
+`scroll_gate` in `gesture_math.[ch]` is a pure state machine (two flags and a counter), fed
 only from the event-tap thread in delivery order:
 
-- `armed` — set by a frame with exactly `fingers` live contacts, cleared by a
+- `armed` — set by a frame with `fingers` or more live contacts. Contacts
+  beyond `fingers` seen while armed are remembered in `extras` (a resting
+  palm); the gate disarms once the count falls back to `extras` — the
+  fingers have lifted, only the palm is left. Without a palm that is a
   full release (`count == 0`). Mirrors when the gesture state machine would
   be tracking, without the async hop to `g_gesture_queue`.
 - `dropping` — a sequence that begins while armed is ours, and stays ours
@@ -58,5 +61,6 @@ With the app disabled from the menu, every event passes.
   claims would leak the same way, and axis is decided on the other thread.
 - Testing: `test/test_gesture_math.c` replays the captured sequences (full
   swipe with momentum, 2-finger pass-through, sequence restart on staggered
-  lift, fingers arriving mid-scroll, other counts ignored). The tap wiring in
+  lift, fingers arriving mid-scroll, fewer fingers ignored, palm-assisted swipe
+dropped, 2-finger scroll with the palm still down after a swipe passes). The tap wiring in
   `main.m` remains manual-verification only.

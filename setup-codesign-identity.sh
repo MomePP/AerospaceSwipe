@@ -50,8 +50,11 @@ echo "generating self-signed certificate..."
 openssl req -x509 -newkey rsa:2048 -keyout "$WORKDIR/codesign.key" -out "$WORKDIR/codesign.crt" \
     -days 3650 -nodes -config "$WORKDIR/codesign.cnf"
 
+# OpenSSL 3 defaults to AES-256 + a SHA-256 MAC, which `security import`
+# rejects as "MAC verification failed"; force the SHA1/3DES format it reads.
 openssl pkcs12 -export -out "$WORKDIR/codesign.p12" \
-    -inkey "$WORKDIR/codesign.key" -in "$WORKDIR/codesign.crt" -passout pass:temppass
+    -inkey "$WORKDIR/codesign.key" -in "$WORKDIR/codesign.crt" -passout pass:temppass \
+    -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
 
 echo "importing into login keychain..."
 security import "$WORKDIR/codesign.p12" -k "$KEYCHAIN" -P temppass -T /usr/bin/codesign -T /usr/bin/security

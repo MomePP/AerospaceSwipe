@@ -355,7 +355,8 @@ static void reset_gesture_state(gesture_ctx* ctx)
 	ctx->acc_dx = 0;
 	ctx->peak_velx = 0;
 	ctx->executed_step = 0;
-	memset(ctx->prev_valid, 0, sizeof(ctx->prev_valid));
+	memset(ctx->slot_tracked, 0, sizeof(ctx->slot_tracked));
+	memset(ctx->slot_live, 0, sizeof(ctx->slot_live));
 
 	// cached_workspace_list is also read/written under g_aerospace_mutex by
 	// switch_workspace() from the workspace-dispatch queue; take the same
@@ -410,6 +411,44 @@ static void maybe_dispatch_switch(gesture_ctx* ctx, Config cfg)
 	});
 }
 
+typedef struct {
+	float x0[MAX_TOUCHES], y0[MAX_TOUCHES], dx[MAX_TOUCHES];
+	bool live[MAX_TOUCHES];
+	int n;
+} tracked_contacts;
+
+static tracked_contacts collect_tracked(gesture_ctx* ctx)
+{
+	tracked_contacts t = { .n = 0 };
+	for (int slot = 0; slot < MAX_TOUCHES; ++slot) {
+		if (!ctx->slot_tracked[slot])
+			continue;
+		t.x0[t.n] = ctx->slot_x0[slot];
+		t.y0[t.n] = ctx->slot_y0[slot];
+		t.dx[t.n] = ctx->slot_dx[slot];
+		t.live[t.n++] = ctx->slot_live[slot];
+	}
+	return t;
+}
+
+// Palm rejection: a swipe counts only if exactly `fingers` tracked contacts
+// moved together; a palm (isolated from the others) is ignored and any other
+// contact must have stayed still. A contact that lifted keeps the
+// displacement it made; one that landed after the axis locked is not judged.
+// *swipe_dx is the moving fingers' mean displacement.
+static bool gesture_swipe_dx(gesture_ctx* ctx, int fingers, float* swipe_dx)
+{
+	tracked_contacts t = collect_tracked(ctx);
+	return swipe_contacts(t.x0, t.y0, t.dx, t.n, fingers, PALM_MIN_SHARE, PALM_ISOLATION, swipe_dx);
+}
+
+// The fingers have all lifted and only a resting palm is left down.
+static bool gesture_only_palms_remain(gesture_ctx* ctx)
+{
+	tracked_contacts t = collect_tracked(ctx);
+	return only_palms_remain(t.x0, t.y0, t.live, t.n, PALM_ISOLATION);
+}
+
 // multi_swipe == false path: fire exactly one step, only at gesture
 // release (called from gestureCallback when count == 0). Mirrors
 // SwipeAeroSpace's own single-swipe fallback — no live mid-gesture
@@ -421,10 +460,11 @@ static void fire_single_swipe(gesture_ctx* ctx, Config cfg)
 	bool fast = fabsf(ctx->peak_velx) >= cfg.fast_velocity_threshold;
 	float need = fast ? cfg.distance_pct * cfg.fast_distance_factor : cfg.distance_pct;
 
-	if (fabsf(ctx->acc_dx) < need)
+	float swipe_dx;
+	if (!gesture_swipe_dx(ctx, cfg.fingers, &swipe_dx) || fabsf(swipe_dx) < need)
 		return;
 
-	int step_dir = ctx->acc_dx > 0 ? 1 : -1;
+	int step_dir = swipe_dx > 0 ? 1 : -1;
 	const char* ws = step_dir > 0 ? cfg.swipe_right : cfg.swipe_left;
 	char** cache = &ctx->cached_workspace_list;
 	bool* retargeted = &ctx->monitor_retargeted;
@@ -462,6 +502,16 @@ static void calculate_touch_averages(touch* touches, int count,
 	*avg_vel /= count;
 }
 
+static void track_slot(gesture_ctx* ctx, int slot, float x, float y)
+{
+	ctx->prev_x[slot] = x;
+	ctx->slot_x0[slot] = x;
+	ctx->slot_y0[slot] = y;
+	ctx->slot_dx[slot] = 0;
+	ctx->slot_tracked[slot] = true;
+	ctx->slot_live[slot] = true;
+}
+
 static void handle_idle_state(gesture_ctx* ctx, touch* touches, int count, float avg_x, float avg_y)
 {
 	ctx->state = GS_TRACKING;
@@ -472,24 +522,22 @@ static void handle_idle_state(gesture_ctx* ctx, touch* touches, int count, float
 	ctx->start_x = avg_x;
 	ctx->start_y = avg_y;
 
-	// Gesture start is the reference point: only the fingers actually down
+	// Gesture start is the reference point: only the contacts actually down
 	// right now have a position worth differencing against.
-	memset(ctx->prev_valid, 0, sizeof(ctx->prev_valid));
+	memset(ctx->slot_tracked, 0, sizeof(ctx->slot_tracked));
+	memset(ctx->slot_live, 0, sizeof(ctx->slot_live));
 
 	for (int i = 0; i < count; ++i) {
-		if (touches[i].slot < 0)
-			continue;
-		ctx->prev_x[touches[i].slot] = touches[i].x;
-		ctx->prev_valid[touches[i].slot] = true;
+		if (touches[i].slot >= 0)
+			track_slot(ctx, touches[i].slot, touches[i].x, touches[i].y);
 	}
 }
 
 static void handle_tracking_state(gesture_ctx* ctx, touch* touches, int count,
 	float avg_x, float avg_y, float avg_vel, Config cfg)
 {
-	float frame_dx = 0;
-	int moved = 0;
 	bool present[MAX_TOUCHES] = { false };
+	bool changed = false;
 
 	for (int i = 0; i < count; ++i) {
 		int slot = touches[i].slot;
@@ -498,30 +546,37 @@ static void handle_tracking_state(gesture_ctx* ctx, touch* touches, int count,
 
 		present[slot] = true;
 
-		// A finger that lands mid-gesture has no previous position of its
-		// own — and since slots are recycled on release, prev_x[slot] may
-		// still hold the last position of whichever finger held the slot
-		// before. Seed it and let this finger contribute from the next
-		// frame, rather than folding a meaningless jump into acc_dx.
-		if (ctx->prev_valid[slot]) {
-			frame_dx += touches[i].x - ctx->prev_x[slot];
-			moved++;
+		if (ctx->slot_live[slot]) {
+			ctx->slot_dx[slot] += touches[i].x - ctx->prev_x[slot];
+			ctx->prev_x[slot] = touches[i].x;
+		} else if (ctx->axis == AXIS_UNDECIDED) {
+			// Fingers never land in the same frame: the gesture starts on
+			// the first frame with `fingers` contacts, which may be palm +
+			// 3 fingers. Contacts landing before the swipe gets moving join
+			// from here. Since slots are recycled on release, prev_x[slot]
+			// may belong to an earlier finger, so this one starts at 0.
+			track_slot(ctx, slot, touches[i].x, touches[i].y);
+			changed = true;
 		}
-
-		ctx->prev_x[slot] = touches[i].x;
-		ctx->prev_valid[slot] = true;
 	}
 
 	// Every frame carries the full set of live contacts, so a slot missing
-	// from this one belongs to a finger that has lifted. Drop its position
-	// now so it can't seed a later finger that inherits the slot.
+	// from this one belongs to a contact that has lifted. Freeze its
+	// displacement so a later finger inheriting the slot can't add to it.
 	for (int slot = 0; slot < MAX_TOUCHES; ++slot) {
-		if (!present[slot])
-			ctx->prev_valid[slot] = false;
+		if (!present[slot] && ctx->slot_live[slot]) {
+			ctx->slot_live[slot] = false;
+			changed = true;
+		}
 	}
 
-	if (moved > 0)
-		ctx->acc_dx += frame_dx / moved;
+	// A contact landing or lifting shifts the average position without any
+	// motion (a palm far from the fingers moves it ~0.13), so re-baseline,
+	// or that jump alone could lock the axis (vertical blocks the swipe).
+	if (changed && ctx->axis == AXIS_UNDECIDED) {
+		ctx->start_x = avg_x;
+		ctx->start_y = avg_y;
+	}
 
 	if (fabsf(avg_vel) > fabsf(ctx->peak_velx))
 		ctx->peak_velx = avg_vel;
@@ -532,9 +587,23 @@ static void handle_tracking_state(gesture_ctx* ctx, touch* touches, int count,
 	if (ctx->axis != AXIS_HORIZONTAL || !cfg.multi_swipe)
 		return;
 
+	float swipe_dx;
+	if (!gesture_swipe_dx(ctx, cfg.fingers, &swipe_dx))
+		return;
+
+	ctx->acc_dx = swipe_dx;
 	int target = compute_target_step(ctx->acc_dx, cfg.distance_pct, cfg.max_steps);
 	if (target != ctx->executed_step)
 		maybe_dispatch_switch(ctx, cfg);
+}
+
+// The gesture is over: in single-swipe mode this is when the switch fires.
+static void end_gesture(gesture_ctx* ctx, Config cfg)
+{
+	if (ctx->state == GS_TRACKING && !cfg.multi_swipe
+		&& ctx->axis == AXIS_HORIZONTAL)
+		fire_single_swipe(ctx, cfg);
+	reset_gesture_state(ctx);
 }
 
 static void gestureCallback(touch* touches, int count)
@@ -551,22 +620,15 @@ static void gestureCallback(touch* touches, int count)
 	gesture_ctx* ctx = &g_gesture_ctx;
 
 	if (count == 0) {
-		if (ctx->state == GS_TRACKING && !cfg.multi_swipe
-			&& ctx->axis == AXIS_HORIZONTAL)
-			fire_single_swipe(ctx, cfg);
-		reset_gesture_state(ctx);
+		end_gesture(ctx, cfg);
 		goto unlock;
 	}
 
 	if (ctx->state == GS_IDLE) {
-		if (count != cfg.fingers) {
-			for (int i = 0; i < count; ++i) {
-				if (touches[i].slot < 0)
-					continue;
-				ctx->prev_x[touches[i].slot] = touches[i].x;
-			}
+		// More contacts than `fingers` may be a resting palm; swipe_contacts
+		// decides once they move.
+		if (count < cfg.fingers)
 			goto unlock;
-		}
 
 		float avg_x, avg_y, avg_vel, min_x, max_x, min_y, max_y;
 		calculate_touch_averages(touches, count, &avg_x, &avg_y, &avg_vel,
@@ -576,13 +638,18 @@ static void gestureCallback(touch* touches, int count)
 	}
 
 	// GS_TRACKING: tolerate finger-count drift (e.g. a transient miscount,
-	// or an extra incidental contact) instead of resetting progress. Only
-	// a true full release (count == 0, handled above) ends the gesture.
+	// or an extra incidental contact) instead of resetting progress. The
+	// gesture ends on a full release (count == 0, handled above) or once
+	// only a resting palm is left, so the next swipe starts fresh with the
+	// palm still down. A switch still needs exactly `fingers` contacts
+	// moving together, the rest still (gesture_swipe_dx).
 	{
 		float avg_x, avg_y, avg_vel, min_x, max_x, min_y, max_y;
 		calculate_touch_averages(touches, count, &avg_x, &avg_y, &avg_vel,
 			&min_x, &max_x, &min_y, &max_y);
 		handle_tracking_state(ctx, touches, count, avg_x, avg_y, avg_vel, cfg);
+		if (gesture_only_palms_remain(ctx))
+			end_gesture(ctx, cfg);
 	}
 
 unlock:
