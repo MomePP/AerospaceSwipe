@@ -1,5 +1,0 @@
-{
-  "setup": ["make all"],
-  "teardown": ["make clean"],
-  "run": ["./.superset/run.sh"]
-}
